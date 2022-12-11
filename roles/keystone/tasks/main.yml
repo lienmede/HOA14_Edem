@@ -1,0 +1,62 @@
+- name: Install the prerequisites for mod_wsgi
+  apt:
+    name:
+       - apache2
+       - apache2-utils
+       - libexpat1
+       - ssl-cert
+       - python3
+       - libapache2-mod-wsgi-py3
+  when: ansible_distribution == "Ubuntu"
+
+- name:  Configuring mod_wsgi for Apache
+  copy:
+    dest: /var/www/html/test_script.py
+    content: |
+      def application(environ,start_response):
+          status = '200 OK'
+          html = '\n' \
+                 '\n' \
+                 ' mod_wsgi is working \n' \
+                 '\n' \
+                 '\n'
+          response_header = [('Content-type','text/html')]
+          start_response(status,response_header)
+          return [html]
+- name: Create a seperate apache config to serve our python script over HTTP
+  copy:
+    dest: /etc/apache2/conf-available/wsgi.conf
+    content: |
+      WSGIScriptAlias /test_wsgi /var/www/html/test_script.py
+
+- name: installing keystone package
+  apt:
+    name: keystone
+  when: ansible_distribution == "Ubuntu"
+
+- name: initializing the fernet repositories
+  shell: |
+    keystone-manage fernet_setup --keystone-user keystone --keystone-group keystone
+    keystone-manage credential_setup --keystone-user keystone --keystone-group keystone
+
+- name: configure apache http server
+  copy:
+    dest: /etc/apache2/apache2.conf
+    content: |
+      ServerName controller
+  when: ansible_distribution == "Ubuntu"
+
+- name: configuring administrative account by setting the proper environmental variables
+  shell: |
+    export OS_USERNAME=admin
+    export OS_PASSWORD=1234
+    export OS_PROJECT_NAME=admin
+    export OS_USER_DOMAIN_NAME=Default
+    export OS_PROJECT_DOMAIN_NAME=Default
+    export OS_AUTH_URL=http://controller:5000/v3
+    export OS_IDENTITY_API_VERSION=3
+
+- block:
+  - name: Verifying if already active and running the keystone.
+    shell: keystone-manage --help
+    register: keystone_service
